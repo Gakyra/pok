@@ -8,9 +8,6 @@ import math
 import itertools
 from datetime import datetime
 from treys import Card, Evaluator, Deck
-from network import PokerServerThread, send_signal_to_player
-
-
 
 evaluator = Evaluator()
 
@@ -277,8 +274,6 @@ class PokerApp:
         self.create_widgets()
         self.rebuild_players_list()
         self.update_selection_visual()
-        self.server = PokerServerThread(app_instance=self)
-        self.server.start()
 
     # ---------------------------------------------------------------
     #  СТАРТОВЫЙ ДИАЛОГ: сколько игроков, сколько наша команда, докинг окна
@@ -367,22 +362,6 @@ class PokerApp:
             self.root.geometry(f"{w}x{sh}+{sw - w}+0")
         else:
             self.root.geometry(f"{sw}x{sh}+0+0")
-
-    def apply_network_cards(self, player_id, card1, card2):
-        """Динамический прием карт от напарников (P1, P2, P3...)"""
-        try:
-            idx = int(player_id.replace("P", "")) - 1
-        except ValueError:
-            return
-
-        if 0 <= idx < len(self.players_data):
-            cards = [c for c in [card1, card2] if c]
-            self.players_data[idx]["cards"] = cards
-
-            self.rebuild_players_list()
-            if hasattr(self, "update_selection_visual"):
-                self.update_selection_visual()
-            self.calculate_equity()
 
     # ---------------------------------------------------------------
     #  ИСТОРИЯ СЕССИИ
@@ -1045,22 +1024,9 @@ class PokerApp:
         for p in active_team:
             role, action, edge = self._assign_role(p, leader, fair_share)
             edge_str = f"+{edge:.1f}" if edge >= 0 else f"{edge:.1f}"
-            out.append(
-                f"\n👤 {p['name']} - {p['equity']:.1f}% (edge {edge_str} п.п.)"
-            )
+            out.append(f"\n👤 {p['name']} — {p['equity']:.1f}% (edge {edge_str} п.п.)")
             out.append(f"   {role}")
-            out.append(f"   -> {action}")
-
-            # ⚡ ОТПРАВКА СИГНАЛА ПО СЕТИ НАПАРНИКУ
-            if hasattr(self, "server") and self.server:
-                try:
-                    p_idx = self.players_data.index(p) + 1
-                    pid = f"P{p_idx}"
-                    command_msg = f"{role} ({p['equity']:.1f}%)\n{action}"
-                    send_signal_to_player(self.server, pid, command_msg)
-                except Exception as e:
-                    print(f"[СЕТЬ ERROR] {e}")
-
+            out.append(f"   → {action}")
             trend = self._format_trend(p["name"])
             if trend:
                 out.append(f"   📈 {trend}")
