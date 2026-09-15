@@ -369,22 +369,20 @@ class PokerApp:
             self.root.geometry(f"{sw}x{sh}+0+0")
 
     def apply_network_cards(self, player_id, card1, card2):
-        """Принимает карты от напарников по сети и подставляет их в слот"""
-        # Карта соответствий ID с интерфейсом (p0, p1, p2 и т.д.)
-        player_map = {"P1": 0, "P2": 1, "P3": 2}
+        """Динамический прием карт от напарников (P1, P2, P3...)"""
+        try:
+            idx = int(player_id.replace("P", "")) - 1
+        except ValueError:
+            return
 
-        if player_id in player_map:
-            idx = player_map[player_id]
-            if idx < len(self.players_data):
-                # Автоматически обновляем карты игрока
-                self.players_data[idx]["cards"] = [
-                    c for c in [card1, card2] if c
-                ]
+        if 0 <= idx < len(self.players_data):
+            cards = [c for c in [card1, card2] if c]
+            self.players_data[idx]["cards"] = cards
 
-                # Перерисовываем интерфейс и делаем перерасчет
-                self.rebuild_players_list()
-                if hasattr(self, "on_input_change"):
-                    self.on_input_change()
+            self.rebuild_players_list()
+            if hasattr(self, "update_selection_visual"):
+                self.update_selection_visual()
+            self.calculate_equity()
 
     # ---------------------------------------------------------------
     #  ИСТОРИЯ СЕССИИ
@@ -1047,9 +1045,22 @@ class PokerApp:
         for p in active_team:
             role, action, edge = self._assign_role(p, leader, fair_share)
             edge_str = f"+{edge:.1f}" if edge >= 0 else f"{edge:.1f}"
-            out.append(f"\n👤 {p['name']} — {p['equity']:.1f}% (edge {edge_str} п.п.)")
+            out.append(
+                f"\n👤 {p['name']} - {p['equity']:.1f}% (edge {edge_str} п.п.)"
+            )
             out.append(f"   {role}")
-            out.append(f"   → {action}")
+            out.append(f"   -> {action}")
+
+            # ⚡ ОТПРАВКА СИГНАЛА ПО СЕТИ НАПАРНИКУ
+            if hasattr(self, "server") and self.server:
+                try:
+                    p_idx = self.players_data.index(p) + 1
+                    pid = f"P{p_idx}"
+                    command_msg = f"{role} ({p['equity']:.1f}%)\n{action}"
+                    send_signal_to_player(self.server, pid, command_msg)
+                except Exception as e:
+                    print(f"[СЕТЬ ERROR] {e}")
+
             trend = self._format_trend(p["name"])
             if trend:
                 out.append(f"   📈 {trend}")
