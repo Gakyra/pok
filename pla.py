@@ -8,6 +8,9 @@ import math
 import itertools
 from datetime import datetime
 from treys import Card, Evaluator, Deck
+from network import PokerServerThread, send_signal_to_player
+
+
 
 evaluator = Evaluator()
 
@@ -274,6 +277,8 @@ class PokerApp:
         self.create_widgets()
         self.rebuild_players_list()
         self.update_selection_visual()
+        self.server = PokerServerThread(app_instance=self)
+        self.server.start()
 
     # ---------------------------------------------------------------
     #  СТАРТОВЫЙ ДИАЛОГ: сколько игроков, сколько наша команда, докинг окна
@@ -362,6 +367,24 @@ class PokerApp:
             self.root.geometry(f"{w}x{sh}+{sw - w}+0")
         else:
             self.root.geometry(f"{sw}x{sh}+0+0")
+
+    def apply_network_cards(self, player_id, card1, card2):
+        """Принимает карты от напарников по сети и подставляет их в слот"""
+        # Карта соответствий ID с интерфейсом (p0, p1, p2 и т.д.)
+        player_map = {"P1": 0, "P2": 1, "P3": 2}
+
+        if player_id in player_map:
+            idx = player_map[player_id]
+            if idx < len(self.players_data):
+                # Автоматически обновляем карты игрока
+                self.players_data[idx]["cards"] = [
+                    c for c in [card1, card2] if c
+                ]
+
+                # Перерисовываем интерфейс и делаем перерасчет
+                self.rebuild_players_list()
+                if hasattr(self, "on_input_change"):
+                    self.on_input_change()
 
     # ---------------------------------------------------------------
     #  ИСТОРИЯ СЕССИИ
