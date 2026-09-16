@@ -883,29 +883,45 @@ class PokerApp:
                 opp_pools.append(pool if pool else None)
         return opp_pools
 
+
+
     def run_monte_carlo_clean(hero_hand, board, opp_pools, deck_cards, iterations=10000):
         """
-        Очищенная симуляция Монте-Карло без искажения диапазонов.
+        Оптимизированная симуляция Монте-Карло с предварительной фильтрацией блокеров.
         """
         wins = 0
         ties = 0
         valid_runs = 0
 
+        # 1. Заранее убираем из пулов оппонентов комбинации, пересекающиеся с Hero и Бордом
+        # Это делается 1 раз, а не 10,000 раз!
+        dead_cards = set(hero_hand) | set(board)
+        base_deck = [c for c in deck_cards if c not in dead_cards]
+
+        clean_opp_pools = []
+        for pool in opp_pools:
+            valid_combos = [combo for combo in pool if combo[0] not in dead_cards and combo[1] not in dead_cards]
+            if not valid_combos:
+                return 0.0  # У оппонента вообще нет возможных рук
+            clean_opp_pools.append(valid_combos)
+
+        cards_needed = 5 - len(board)
+
+        # 2. Быстрый цикл симуляции
         for _ in range(iterations):
-            available = set(deck_cards)
+            available = set(base_deck)
             opp_hands = []
             skip_simulation = False
 
-            # Выбираем руки оппонентам из честно отфильтрованных пулов
-            for pool in opp_pools:
-                valid_combos = filter_pool(pool, available)
-                drawn_hand = draw_from_pool_clean(valid_combos)
+            for pool in clean_opp_pools:
+                # Находим доступные комбинации с учетом карт, уже розданных ДРУГИМ оппонентам в этой итерации
+                valid_combos = [c for c in pool if c[0] in available and c[1] in available]
 
-                # Если у оппонента в данном раскладе больше нет возможных рук из диапазона — скипаем раунд
-                if drawn_hand is None:
+                if not valid_combos:
                     skip_simulation = True
                     break
 
+                drawn_hand = random.choice(valid_combos)
                 opp_hands.append(drawn_hand)
                 available.remove(drawn_hand[0])
                 available.remove(drawn_hand[1])
@@ -915,14 +931,13 @@ class PokerApp:
 
             valid_runs += 1
 
-            # Добираем общие карты (борд) из оставшейся колоды
-            cards_needed = 5 - len(board)
+            # Сдаем оставшиеся общие карты
             community = list(board) + random.sample(list(available), cards_needed)
 
             # Здесь вызывается твоя функция оценки (Evaluator)
-            # result = evaluate_showdown(hero_hand, opp_hands, community)
-            # if result == 'win': wins += 1
-            # elif result == 'tie': ties += 1
+            # res = evaluate_showdown(hero_hand, opp_hands, community)
+            # if res == 'win': wins += 1
+            # elif res == 'tie': ties += 1
 
         if valid_runs == 0:
             return 0.0
