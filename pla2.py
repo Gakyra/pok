@@ -8,6 +8,11 @@ import math
 import itertools
 from datetime import datetime
 from treys import Card, Evaluator, Deck
+import random
+from itertools import combinations
+
+
+
 
 evaluator = Evaluator()
 
@@ -878,34 +883,66 @@ class PokerApp:
                 opp_pools.append(pool if pool else None)
         return opp_pools
 
-    def _run_monte_carlo(self, active_team, active_opps, opp_pools, base_remaining):
-        sims = CONFIG["monte_carlo_sims"]
-        wins = [0] * (len(active_team) + len(active_opps))
-        for _ in range(sims):
-            available = set(base_remaining)
+    def run_monte_carlo_clean(hero_hand, board, opp_pools, deck_cards, iterations=10000):
+        """
+        Очищенная симуляция Монте-Карло без искажения диапазонов.
+        """
+        wins = 0
+        ties = 0
+        valid_runs = 0
+
+        for _ in range(iterations):
+            available = set(deck_cards)
             opp_hands = []
+            skip_simulation = False
+
+            # Выбираем руки оппонентам из честно отфильтрованных пулов
             for pool in opp_pools:
-                c1, c2 = draw_from_pool(pool, available)
-                available.discard(c1)
-                available.discard(c2)
-                opp_hands.append([c1, c2])
-            current_board = list(self.board_cards)
-            needed = 5 - len(current_board)
-            if needed > 0:
-                current_board.extend(random.sample(list(available), needed))
-            best_score, winner_idx = float('inf'), -1
-            for idx, p in enumerate(active_team):
-                score = evaluator.evaluate(p["cards"], current_board)
-                if score < best_score:
-                    best_score, winner_idx = score, idx
-            for o_idx, hand in enumerate(opp_hands):
-                score = evaluator.evaluate(hand, current_board)
-                if score < best_score:
-                    best_score, winner_idx = score, len(active_team) + o_idx
-            wins[winner_idx] += 1
-        mode_label = (f"ОЦЕНКА Monte Carlo — {sims:,} сценариев "
-                      f"(точный перебор невозможен: слишком широкие диапазоны)")
-        return wins, sims, mode_label
+                valid_combos = filter_pool(pool, available)
+                drawn_hand = draw_from_pool_clean(valid_combos)
+
+                # Если у оппонента в данном раскладе больше нет возможных рук из диапазона — скипаем раунд
+                if drawn_hand is None:
+                    skip_simulation = True
+                    break
+
+                opp_hands.append(drawn_hand)
+                available.remove(drawn_hand[0])
+                available.remove(drawn_hand[1])
+
+            if skip_simulation:
+                continue
+
+            valid_runs += 1
+
+            # Добираем общие карты (борд) из оставшейся колоды
+            cards_needed = 5 - len(board)
+            community = list(board) + random.sample(list(available), cards_needed)
+
+            # Здесь вызывается твоя функция оценки (Evaluator)
+            # result = evaluate_showdown(hero_hand, opp_hands, community)
+            # if result == 'win': wins += 1
+            # elif result == 'tie': ties += 1
+
+        if valid_runs == 0:
+            return 0.0
+
+        return (wins + (ties / 2)) / valid_runs
+
+    def filter_pool(pool, available_set):
+        """
+        Возвращает список комбинаций из пула оппонента,
+        обе карты которых гарантированно свободна (есть в available_set).
+        """
+        return [combo for combo in pool if combo[0] in available_set and combo[1] in available_set]
+
+    def draw_from_pool_clean(valid_pool):
+        """
+        Честная и быстрая выборка из заранее отфильтрованного пула.
+        """
+        if not valid_pool:
+            return None
+        return random.choice(valid_pool)
 
     def _make_cache_key(self, active_team, active_opps):
         return (
